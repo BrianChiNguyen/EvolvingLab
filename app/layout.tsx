@@ -1,5 +1,6 @@
 "use client"
 
+import type { Viewport } from 'next'
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { LayoutGrid, Monitor, Zap, LogOut, Settings, ShieldCheck, User, Trophy, BookOpen } from "lucide-react";
@@ -8,6 +9,14 @@ import AuthGate from "@/components/AuthGate";
 import { FocusProvider, useFocus } from "@/context/FocusContext"; 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+
+export const viewport: Viewport = {
+  themeColor: '#020617', // Matches background
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false, // Prevents zooming like a web page
+}
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
