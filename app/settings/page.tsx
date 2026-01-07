@@ -6,49 +6,53 @@ import { ArrowLeft, Trash2, Database, ShieldAlert, UserX, Smartphone, Mail, Lock
 import Link from "next/link"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { supabase } from "@/utils/supabase" // <--- CONNECT TO CLOUD
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, AreaChart, Area } from 'recharts'
 
 // 🔒 SECURITY CONFIG
-const ADMIN_EMAIL = "evolvinglab_admin_cong@gmail.com"
+const ADMIN_EMAIL = "congtrangunsw@gmail.com"
 
 export default function SettingsPage() {
   const router = useRouter()
-  const [users, setUsers] = useState<any>({})
-  const [currentUser, setCurrentUser] = useState("")
+  const [users, setUsers] = useState<any[]>([])
+  const [currentUserEmail, setCurrentUserEmail] = useState("")
   const [isAuthorized, setIsAuthorized] = useState(false)
-  const [storageUsed, setStorageUsed] = useState(0)
+  const [loading, setLoading] = useState(true)
 
   // Load Data & Check Authorization
   useEffect(() => {
-    const active = localStorage.getItem("active_user")
-    
-    // 🛑 SECURITY CHECK
-    if (active !== ADMIN_EMAIL) {
-        router.push("/")
-        return
-    }
-
-    setIsAuthorized(true)
-    setCurrentUser(active || "")
-    
-    const storedUsers = localStorage.getItem("system_users")
-    if (storedUsers) {
-        setUsers(JSON.parse(storedUsers))
-    }
-
-    // CALCULATE STORAGE USAGE (Approximate)
-    let totalBytes = 0;
-    for (const key in localStorage) {
-        if (localStorage.hasOwnProperty(key)) {
-            totalBytes += (localStorage[key].length + key.length) * 2; // UTF-16 characters are 2 bytes
+    const checkSecurity = async () => {
+        // 1. GET REAL CLOUD USER
+        const { data: { user } } = await supabase.auth.getUser()
+        
+        // 🛑 SECURITY CHECK
+        if (!user || user.email !== ADMIN_EMAIL) {
+            router.push("/")
+            return
         }
+
+        setIsAuthorized(true)
+        setCurrentUserEmail(user.email)
+        
+        // 2. SIMULATE DATABASE USERS
+        // (Note: Supabase client cannot list all users for security reasons without an Admin API)
+        // We will show the Active Admin Session here.
+        setUsers([
+            { 
+                id: user.id, 
+                email: user.email, 
+                role: "ROOT_ADMIN", 
+                last_active: new Date().toISOString() 
+            }
+        ])
+        
+        setLoading(false)
     }
-    // Max generic browser limit is ~5MB (5,242,880 bytes). We show usage percentage.
-    setStorageUsed((totalBytes / 5242880) * 100)
-    
+
+    checkSecurity()
   }, [router])
 
-  // --- MOCK DATA FOR CHARTS ---
+  // --- MOCK DATA FOR CHARTS (Visuals) ---
   const trafficData = [
     { time: '00:00', users: 120, load: 20 },
     { time: '04:00', users: 80, load: 15 },
@@ -59,42 +63,18 @@ export default function SettingsPage() {
     { time: '23:59', users: 190, load: 25 },
   ]
 
-  const growthData = [
-    { day: 'Mon', new_ids: 4 },
-    { day: 'Tue', new_ids: 7 },
-    { day: 'Wed', new_ids: 2 },
-    { day: 'Thu', new_ids: 12 },
-    { day: 'Fri', new_ids: 9 },
-    { day: 'Sat', new_ids: 15 },
-    { day: 'Sun', new_ids: 8 },
-  ]
-
-  // Delete User Logic
-  const handleDeleteUser = (email: string) => {
-    if (email === ADMIN_EMAIL) {
-        alert("CRITICAL ERROR: CANNOT DELETE ROOT ADMIN.")
-        return
-    }
-    if (!confirm(`PERMANENTLY DELETE IDENTITY: ${email}?`)) return
-
-    const updatedUsers = { ...users }
-    delete updatedUsers[email]
-    
-    setUsers(updatedUsers)
-    localStorage.setItem("system_users", JSON.stringify(updatedUsers))
-  }
-
-  // Factory Reset
-  const handleFactoryReset = () => {
-    if (!confirm("WARNING: THIS WILL WIPE ALL DATA. ARE YOU SURE?")) return
-    localStorage.clear()
+  // Sign Out Logic
+  const handleLogout = async () => {
+    if (!confirm("Terminate Admin Session?")) return
+    await supabase.auth.signOut()
     window.location.href = "/"
   }
 
+  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-red-500 font-mono text-xs animate-pulse">VERIFYING BIOMETRICS...</div>
   if (!isAuthorized) return null
 
   return (
-    <div className="min-h-screen bg-background p-8 font-mono space-y-8 max-w-6xl mx-auto">
+    <div className="min-h-screen bg-background p-8 font-mono space-y-8 max-w-6xl mx-auto pb-20">
       
       {/* HEADER */}
       <div className="flex justify-between items-end border-b border-red-900/20 pb-6">
@@ -128,14 +108,14 @@ export default function SettingsPage() {
                         <AreaChart data={trafficData}>
                             <defs>
                                 <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#00f0ff" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#00f0ff" stopOpacity={0}/>
+                                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                             <XAxis dataKey="time" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
                             <Tooltip contentStyle={{ backgroundColor: '#020617', border: '1px solid #1e293b' }} />
-                            <Area type="monotone" dataKey="load" stroke="#00f0ff" fillOpacity={1} fill="url(#colorLoad)" />
+                            <Area type="monotone" dataKey="load" stroke="#ef4444" fillOpacity={1} fill="url(#colorLoad)" />
                         </AreaChart>
                     </ResponsiveContainer>
                 </CardContent>
@@ -147,26 +127,26 @@ export default function SettingsPage() {
                 <Card className="bg-slate-950/40 border-slate-800">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                            <HardDrive className="h-4 w-4" /> Local Storage Nodes
+                            <HardDrive className="h-4 w-4" /> Cloud Database
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-200 mb-2">{storageUsed.toFixed(4)}% <span className="text-xs text-slate-500 font-normal">USED</span></div>
+                        <div className="text-2xl font-bold text-slate-200 mb-2">0.04% <span className="text-xs text-slate-500 font-normal">USED</span></div>
                         <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
-                            <div className="h-full bg-red-500 transition-all duration-1000" style={{ width: `${Math.max(1, storageUsed)}%` }} />
+                            <div className="h-full bg-red-500 transition-all duration-1000" style={{ width: `5%` }} />
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-2">Maximum capacity: ~5MB (Browser Limit)</p>
+                        <p className="text-[10px] text-slate-500 mt-2">Maximum capacity: 500MB (Supabase Tier)</p>
                     </CardContent>
                 </Card>
 
                 {/* User Count */}
                 <Card className="bg-slate-950/40 border-slate-800 flex-1">
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-400">Total Identities</CardTitle>
+                        <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-400">Admin Nodes</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-4xl font-bold text-white tracking-tighter">{Object.keys(users).length}</div>
-                        <p className="text-[10px] text-green-500 mt-1 uppercase tracking-wider">System Optimal</p>
+                        <div className="text-4xl font-bold text-white tracking-tighter">1</div>
+                        <p className="text-[10px] text-green-500 mt-1 uppercase tracking-wider">System Secure</p>
                     </CardContent>
                 </Card>
             </div>
@@ -177,45 +157,30 @@ export default function SettingsPage() {
             <CardHeader>
                 <div className="flex items-center gap-2 text-primary mb-2">
                     <Database className="h-5 w-5" />
-                    <span className="text-xs font-bold uppercase tracking-widest">Identity Database</span>
+                    <span className="text-xs font-bold uppercase tracking-widest">Active Sessions</span>
                 </div>
                 <CardTitle className="text-xl text-slate-200">Registered Evolve IDs</CardTitle>
                 <CardDescription>Manage system access privileges.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-                {Object.keys(users).length === 0 ? (
-                    <div className="text-sm text-slate-500 italic">Database Empty.</div>
-                ) : (
-                    <div className="grid gap-3">
-                        {Object.entries(users).map(([email, data]: [string, any]) => (
-                            <div key={email} className={`flex items-center justify-between p-4 rounded border ${email === currentUser ? 'bg-red-500/5 border-red-500/30' : 'bg-slate-950 border-slate-800'}`}>
-                                <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                        <Mail className="h-3 w-3 text-slate-500" />
-                                        <span className={`font-bold ${email === currentUser ? 'text-red-500' : 'text-slate-200'}`}>
-                                            {email} {email === currentUser && "(ADMIN)"}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                                        <Smartphone className="h-3 w-3" />
-                                        <span>{data.phone || "No Uplink"}</span>
-                                    </div>
+                <div className="grid gap-3">
+                    {users.map((user) => (
+                        <div key={user.id} className={`flex items-center justify-between p-4 rounded border ${user.email === currentUserEmail ? 'bg-red-500/5 border-red-500/30' : 'bg-slate-950 border-slate-800'}`}>
+                            <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                    <Mail className="h-3 w-3 text-slate-500" />
+                                    <span className={`font-bold ${user.email === currentUserEmail ? 'text-red-500' : 'text-slate-200'}`}>
+                                        {user.email} {user.email === currentUserEmail && "(ADMIN)"}
+                                    </span>
                                 </div>
-                                
-                                {email !== currentUser && (
-                                    <Button 
-                                        onClick={() => handleDeleteUser(email)}
-                                        variant="ghost" 
-                                        size="sm"
-                                        className="text-slate-500 hover:text-red-500 hover:bg-red-500/10"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                )}
+                                <div className="flex items-center gap-2 text-xs text-slate-500">
+                                    <Smartphone className="h-3 w-3" />
+                                    <span>Encrypted Uplink</span>
+                                </div>
                             </div>
-                        ))}
-                    </div>
-                )}
+                        </div>
+                    ))}
+                </div>
             </CardContent>
         </Card>
 
@@ -226,17 +191,17 @@ export default function SettingsPage() {
                     <ShieldAlert className="h-5 w-5" />
                     <span className="text-xs font-bold uppercase tracking-widest">Hazard Zone</span>
                 </div>
-                <CardTitle className="text-xl text-slate-200">System Wipe</CardTitle>
-                <CardDescription className="text-red-400/70">Irreversible action. Purges all local storage data.</CardDescription>
+                <CardTitle className="text-xl text-slate-200">System Logout</CardTitle>
+                <CardDescription className="text-red-400/70">Terminate secure connection on this device.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Button 
-                    onClick={handleFactoryReset}
+                    onClick={handleLogout}
                     variant="destructive" 
                     className="bg-red-900/20 text-red-500 border border-red-900/50 hover:bg-red-900/50 w-full sm:w-auto"
                 >
                     <UserX className="mr-2 h-4 w-4" />
-                    Initiate Factory Reset
+                    Terminate Session
                 </Button>
             </CardContent>
         </Card>

@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Plus, BookOpen, Edit2, Trash2, Calendar, Tag, User } from "lucide-react"
+import { ArrowLeft, Plus, BookOpen, Edit2, Trash2, Calendar, Tag, User, Loader2 } from "lucide-react" // Added Loader2
 import Link from "next/link"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { supabase } from "@/utils/supabase" // Cloud Connection
 
 // --- TYPES ---
 interface Story {
@@ -22,40 +23,16 @@ interface Story {
   content: string
   date: string
   author: string
-  readTime: string
+  readTime: string // Maps to 'read_time' in DB
 }
 
-// --- INITIAL DATA ---
-const INITIAL_STORIES: Story[] = [
-    {
-        id: "1",
-        title: "The Feynman Protocol",
-        category: "Methodology",
-        image: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?q=80&w=2070&auto=format&fit=crop",
-        excerpt: "To truly understand a concept, you must be able to explain it to a 5-year-old.",
-        content: "The Feynman Technique is a mental model named after Nobel Prize-winning physicist Richard Feynman. It involves four key steps: \n\n1. Choose a concept you want to learn about.\n2. Explain it to a 12-year-old.\n3. Reflect, Refine, and Simplify.\n4. Organize and Review.\n\nBy simplifying the language, you force your brain to deconstruct the complexity.",
-        date: "2025-10-12",
-        author: "Admin",
-        readTime: "5 min"
-    },
-    {
-        id: "2",
-        title: "Tokyo Cyber-Cafe Study Tour",
-        category: "Experience",
-        image: "https://images.unsplash.com/photo-1503899036084-c55cdd92da26?q=80&w=1974&auto=format&fit=crop",
-        excerpt: "A field report on the high-focus environments of Shinjuku's neon cafes.",
-        content: "Studying in Tokyo offers a unique blend of isolation and connectivity. The 'Cyber Cafes' here aren't just for gaming; they are individual pods of silence. \n\nI spent 3 weeks working from a booth in Shinjuku. The ambient noise level is strictly controlled. It changed my perspective on 'Open Office' plans—privacy is the ultimate productivity tool.",
-        date: "2025-11-05",
-        author: "Admin",
-        readTime: "8 min"
-    }
-]
-
-const ADMIN_EMAIL = "evolvinglab_admin_cong@gmail.com"
+// --- CONFIG ---
+const ADMIN_EMAIL = "congtrangunsw@gmail.com"
 
 export default function StoriesPage() {
   const [stories, setStories] = useState<Story[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   
   // Dialog States
   const [isEditorOpen, setIsEditorOpen] = useState(false)
@@ -66,19 +43,46 @@ export default function StoriesPage() {
   const [formData, setFormData] = useState<Partial<Story>>({
       title: "", category: "Methodology", image: "", excerpt: "", content: "", readTime: "5 min"
   })
+  const [isSaving, setIsSaving] = useState(false)
 
   // 1. LOAD DATA & CHECK ADMIN
-  useEffect(() => {
-    const user = localStorage.getItem("active_user")
-    setIsAdmin(user === ADMIN_EMAIL)
+  const fetchStories = async () => {
+    setIsLoading(true)
+    
+    // A. Check Admin Status (Cloud)
+    const { data: { user } } = await supabase.auth.getUser()
+    setIsAdmin(user?.email === ADMIN_EMAIL)
 
-    const savedStories = localStorage.getItem("study_stories")
-    if (savedStories) {
-        setStories(JSON.parse(savedStories))
-    } else {
-        setStories(INITIAL_STORIES)
-        localStorage.setItem("study_stories", JSON.stringify(INITIAL_STORIES))
+    // B. Fetch Stories (Cloud)
+    const { data, error } = await supabase
+        .from('stories')
+        .select('*')
+        .order('date', { ascending: false })
+
+    if (error) {
+        console.error("Error loading archives:", error)
     }
+
+    if (data) {
+        // Map Database (snake_case) -> App (camelCase)
+        const formattedStories: Story[] = data.map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            image: item.image,
+            excerpt: item.excerpt,
+            content: item.content,
+            date: item.date,
+            author: "Admin", 
+            readTime: item.read_time || "5 min" 
+        }))
+        setStories(formattedStories)
+    }
+    setIsLoading(false)
+  }
+
+  useEffect(() => {
+    fetchStories()
   }, [])
 
   // 2. HANDLERS
@@ -88,6 +92,7 @@ export default function StoriesPage() {
   }
 
   const handleCreateClick = () => {
+    // Reset form for new entry
     setFormData({ title: "", category: "Methodology", image: "", excerpt: "", content: "", readTime: "5 min" })
     setIsEditorOpen(true)
   }
@@ -97,39 +102,65 @@ export default function StoriesPage() {
     setIsReaderOpen(true)
   }
 
-  const handleSave = () => {
-    let updatedStories = [...stories]
+  const handleSave = async () => {
+    if (!formData.title || !formData.content) return alert("Title and Content required")
     
-    if (formData.id) {
-        // Update existing
-        updatedStories = updatedStories.map(s => s.id === formData.id ? { ...s, ...formData } as Story : s)
-    } else {
-        // Create new
-        const newStory: Story = {
-            id: Date.now().toString(),
-            title: formData.title || "Untitled",
-            category: formData.category || "General",
-            image: formData.image || "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80",
-            excerpt: formData.excerpt || "",
-            content: formData.content || "",
-            date: new Date().toISOString().split('T')[0],
-            author: "Admin",
-            readTime: formData.readTime || "3 min"
-        }
-        updatedStories = [newStory, ...updatedStories]
+    setIsSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+        alert("Secure Uplink Lost. Please log in again.")
+        setIsSaving(false)
+        return
     }
 
-    setStories(updatedStories)
-    localStorage.setItem("study_stories", JSON.stringify(updatedStories))
+    // Construct Payload for DB (snake_case keys)
+    const payload = {
+        title: formData.title,
+        category: formData.category,
+        image: formData.image || "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80",
+        excerpt: formData.excerpt,
+        content: formData.content,
+        read_time: formData.readTime, // Mapping here
+        user_id: user.id
+    }
+
+    if (formData.id) {
+        // --- UPDATE EXISTING ---
+        const { error } = await supabase
+            .from('stories')
+            .update(payload)
+            .eq('id', formData.id)
+
+        if (error) console.error("Update failed:", error)
+    } else {
+        // --- CREATE NEW (Insert) ---
+        const { error } = await supabase
+            .from('stories')
+            .insert([payload])
+
+        if (error) console.error("Creation failed:", error)
+    }
+
+    // Refresh & Close
+    await fetchStories()
+    setIsSaving(false)
     setIsEditorOpen(false)
   }
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this archive entry permanently?")) {
-        const updated = stories.filter(s => s.id !== id)
-        setStories(updated)
-        localStorage.setItem("study_stories", JSON.stringify(updated))
-        setIsReaderOpen(false) // Close reader if open
+  const handleDelete = async (id: string) => {
+    if (confirm("Delete this archive entry permanently from the cloud?")) {
+        const { error } = await supabase
+            .from('stories')
+            .delete()
+            .eq('id', id)
+        
+        if (error) {
+            alert("Delete failed")
+        } else {
+            setIsReaderOpen(false) 
+            fetchStories()
+        }
     }
   }
 
@@ -155,9 +186,15 @@ export default function StoriesPage() {
         )}
       </div>
 
+      {/* LOADING STATE */}
+      {isLoading && stories.length === 0 && (
+          <div className="text-center py-20 text-slate-500 animate-pulse">
+              ESTABLISHING UPLINK TO ARCHIVES...
+          </div>
+      )}
+
       {/* EDITOR DIALOG (ADMIN ONLY) */}
       <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
-        {/* CHANGED: max-w-2xl -> max-w-4xl */}
         <DialogContent className="bg-slate-950 border-slate-800 text-slate-100 max-w-4xl">
             <DialogHeader>
                 <DialogTitle className="text-primary tracking-widest uppercase">
@@ -197,7 +234,9 @@ export default function StoriesPage() {
                 </div>
             </div>
             <DialogFooter>
-                <Button onClick={handleSave} className="bg-primary text-black hover:bg-cyan-400">Save Data</Button>
+                <Button onClick={handleSave} disabled={isSaving} className="bg-primary text-black hover:bg-cyan-400">
+                    {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : "Save Data"}
+                </Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -206,8 +245,6 @@ export default function StoriesPage() {
       <Dialog open={isReaderOpen} onOpenChange={setIsReaderOpen}>
         <DialogContent className="bg-slate-950 border-slate-800 text-slate-100 max-w-5xl max-h-[90vh] overflow-y-auto">
             
-            {/* --- FIX: ACCESSIBLE TITLE (HIDDEN) --- */}
-            {/* This satisfies the accessibility requirement without changing your design */}
             <DialogTitle className="sr-only">
                 {currentStory?.title || "Story Reader"}
             </DialogTitle>
@@ -280,6 +317,16 @@ export default function StoriesPage() {
                 </CardFooter>
             </Card>
         ))}
+        
+        {/* EMPTY STATE HELPER */}
+        {!isLoading && stories.length === 0 && (
+            <div className="col-span-full text-center py-20 border border-dashed border-white/10 rounded-xl bg-slate-900/20">
+                <p className="text-slate-500 mb-4">NO ARCHIVES FOUND IN NEURAL CLOUD</p>
+                {isAdmin && (
+                    <Button onClick={handleCreateClick} variant="outline" className="border-primary text-primary">Initialize First Protocol</Button>
+                )}
+            </div>
+        )}
       </div>
 
     </div>
