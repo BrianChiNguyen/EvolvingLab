@@ -1,33 +1,38 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { supabase } from "@/utils/supabase"
 import { AuthPage } from "@/components/AuthPage"
+import { Session } from "@supabase/supabase-js"
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<string | null>(null)
-  const [mounted, setMounted] = useState(false)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setMounted(true)
-    const storedUser = localStorage.getItem("active_user")
-    if (storedUser) {
-        setUser(storedUser)
-    }
+    // 1. Check active session on load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setLoading(false)
+    })
+
+    // 2. Listen for changes (Logout/Login)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  const login = (username: string) => {
-    localStorage.setItem("active_user", username)
-    setUser(username)
+  if (loading) {
+    return <div className="min-h-screen bg-black flex items-center justify-center text-primary font-mono text-xs animate-pulse">ESTABLISHING LINK...</div>
   }
 
-  // Prevent hydration mismatch by waiting for mount
-  if (!mounted) return null
-
-  // If no user, show the Lock Screen
-  if (!user) {
-    return <AuthPage onLogin={login} />
+  if (!session) {
+    return <AuthPage onLogin={(s) => setSession(s)} />
   }
 
-  // If user exists, show the App
   return <>{children}</>
 }
