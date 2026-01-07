@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import AppShell from "@/components/AppShell"; // Import your client logic
+import AppShell from "@/components/AppShell"; // This holds your sidebar/logic
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -28,7 +28,6 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.variable} ${mono.variable} font-sans bg-background text-foreground flex h-screen overflow-hidden`}>
-        {/* Pass control to the Client Component */}
         <AppShell>
             {children}
         </AppShell>
