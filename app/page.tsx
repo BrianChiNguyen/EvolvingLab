@@ -23,18 +23,31 @@ export default function GridPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
 
-  // 1. LOAD TASKS FROM CLOUD
+  // 1. LOAD TASKS FROM CLOUD (Fixed Logic)
   const fetchTasks = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
 
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .order('created_at', { ascending: true }) // Oldest first (like a list)
+      // If no user, stop loading but don't crash
+      if (!user) {
+        setLoading(false)
+        return
+      }
 
-    if (data) setTasks(data as Task[])
-    setLoading(false)
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      if (data) setTasks(data as Task[])
+
+    } catch (error) {
+      console.error("Error loading grid:", error)
+    } finally {
+      // Ensure loading ALWAYS stops so the UI appears
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -45,36 +58,31 @@ export default function GridPage() {
   const addTask = async () => {
     if (!newTask.trim()) return
 
-    // Optimistic Update (Show it immediately)
+    // Optimistic Update
     const tempId = Math.random().toString()
     const tempTask: Task = { id: tempId, text: newTask, status: 'todo', created_at: new Date().toISOString() }
     setTasks([...tasks, tempTask])
     setNewTask("")
 
-    // Send to Cloud
+    // Cloud Update
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('tasks')
         .insert({ text: tempTask.text, user_id: user.id, status: 'todo' })
         .select()
         .single()
 
-      // Replace temp ID with real ID from DB
       if (data) {
         setTasks(prev => prev.map(t => t.id === tempId ? data : t))
       }
     }
   }
 
-  // 3. TOGGLE STATUS (This triggers the Score Update)
+  // 3. TOGGLE STATUS
   const toggleTask = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === 'complete' ? 'todo' : 'complete'
-
-    // Optimistic Update
     setTasks(tasks.map(t => t.id === id ? { ...t, status: newStatus } : t))
-
-    // Cloud Update
     await supabase.from('tasks').update({ status: newStatus }).eq('id', id)
   }
 
@@ -92,10 +100,8 @@ export default function GridPage() {
 
   const saveEdit = async () => {
     if (!editingId) return
-
     setTasks(tasks.map(t => t.id === editingId ? { ...t, text: editText } : t))
     await supabase.from('tasks').update({ text: editText }).eq('id', editingId)
-
     setEditingId(null)
     setEditText("")
   }
@@ -129,7 +135,12 @@ export default function GridPage() {
 
       {/* TASK LIST */}
       <div className="space-y-3">
-        {loading && <div className="text-center py-10 text-slate-500 animate-pulse">SYNCING NEURAL CLOUD...</div>}
+        {loading && (
+          <div className="text-center py-10 text-slate-500 flex flex-col items-center gap-2 animate-pulse">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            SYNCING NEURAL CLOUD...
+          </div>
+        )}
 
         {!loading && tasks.length === 0 && (
           <div className="text-center py-20 border border-dashed border-white/10 rounded-xl">
