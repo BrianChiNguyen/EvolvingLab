@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Trophy, Medal, Crown, Send, User, Clock, GraduationCap, Briefcase, Heart, MessageSquare, Loader2 } from "lucide-react"
+import { Trophy, Medal, Crown, Send, User, Clock, GraduationCap, Briefcase, Heart, MessageSquare, Loader2, Trash2 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/utils/supabase"
 
@@ -30,7 +30,6 @@ interface Post {
         username: string
         avatar_url: string
     }
-    // New fields for interactions
     kudos_count: number
     comments_count: number
     user_has_liked: boolean
@@ -60,17 +59,17 @@ export default function FlexPage() {
     const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set())
     const [newCommentText, setNewCommentText] = useState<Record<string, string>>({})
     const [loadingComments, setLoadingComments] = useState<Set<string>>(new Set())
+    const [submittingComment, setSubmittingComment] = useState<Set<string>>(new Set())
 
     // --- 1. LOAD DATA ---
     const loadData = async () => {
-        // A. Get Current User
         const { data: { user } } = await supabase.auth.getUser()
         setCurrentUser(user)
 
         if (!user) return
 
-        // B. Fetch Posts + Counts + My Like Status
-        const { data: postData, error } = await supabase
+        // Fetch Posts
+        const { data: postData } = await supabase
             .from('posts')
             .select(`
                 *,
@@ -94,7 +93,7 @@ export default function FlexPage() {
             setPosts(formattedPosts)
         }
 
-        // C. Calculate Leaderboard
+        // Fetch Leaderboard
         const { data: profiles } = await supabase.from('profiles').select('id, username, avatar_url')
         const { data: tasks } = await supabase.from('tasks').select('user_id, status')
 
@@ -106,7 +105,7 @@ export default function FlexPage() {
 
             const leaderboard = profiles.map((p: any) => ({
                 id: p.id,
-                username: p.username || "Unknown Operative",
+                username: p.username || "Unknown Operative", // Fallback if empty
                 avatar_url: p.avatar_url,
                 score: scores[p.id] || 0
             })).sort((a, b) => b.score - a.score)
@@ -120,7 +119,7 @@ export default function FlexPage() {
         loadData()
     }, [])
 
-    // --- 2. INTERACTION HANDLERS ---
+    // --- 2. ACTIONS ---
 
     const handlePost = async () => {
         if (!newPost.trim()) return
@@ -129,7 +128,6 @@ export default function FlexPage() {
         setSubmitting(true)
 
         try {
-            // 1. Insert the post
             const { error: insertError } = await supabase.from('posts').insert({
                 content: newPost,
                 user_id: currentUser.id
@@ -137,12 +135,10 @@ export default function FlexPage() {
 
             if (insertError) throw insertError
 
-            // 2. Success
             setNewPost("")
             await loadData()
 
         } catch (error: any) {
-            console.error("Transmission Failed:", error)
             alert(`Transmission Failed: ${error.message}`)
         } finally {
             setSubmitting(false)
@@ -152,7 +148,6 @@ export default function FlexPage() {
     const handleKudo = async (post: Post) => {
         if (!currentUser) return
 
-        // Optimistic Update
         const isLiking = !post.user_has_liked
         const updatedPosts = posts.map(p =>
             p.id === post.id
@@ -161,7 +156,6 @@ export default function FlexPage() {
         )
         setPosts(updatedPosts)
 
-        // DB Update
         if (isLiking) {
             await supabase.from('post_kudos').insert({ post_id: post.id, user_id: currentUser.id })
         } else {
@@ -176,6 +170,7 @@ export default function FlexPage() {
             newSet.delete(postId)
         } else {
             newSet.add(postId)
+            // Fetch comments if missing
             if (!commentsMap[postId]) {
                 setLoadingComments(prev => new Set(prev).add(postId))
                 const { data } = await supabase
@@ -199,21 +194,39 @@ export default function FlexPage() {
 
     const handleSubmitComment = async (postId: string) => {
         const text = newCommentText[postId]
-        if (!text?.trim() || !currentUser) return
+        if (!text?.trim()) return
+        if (!currentUser) return alert("Please log in to comment.")
 
-        const { data, error } = await supabase
-            .from('post_comments')
-            .insert({ post_id: postId, user_id: currentUser.id, content: text })
-            .select(`*, profiles(username, avatar_url)`)
-            .single()
+        // Mark this specific comment box as loading
+        setSubmittingComment(prev => new Set(prev).add(postId))
 
-        if (data) {
-            setCommentsMap(prev => ({
-                ...prev,
-                [postId]: [...(prev[postId] || []), data as any]
-            }))
-            setNewCommentText(prev => ({ ...prev, [postId]: "" }))
-            setPosts(posts.map(p => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p))
+        try {
+            const { data, error } = await supabase
+                .from('post_comments')
+                .insert({ post_id: postId, user_id: currentUser.id, content: text })
+                .select(`*, profiles(username, avatar_url)`)
+                .single()
+
+            if (error) throw error
+
+            if (data) {
+                // Update local state immediately
+                setCommentsMap(prev => ({
+                    ...prev,
+                    [postId]: [...(prev[postId] || []), data as any]
+                }))
+                setNewCommentText(prev => ({ ...prev, [postId]: "" }))
+                setPosts(posts.map(p => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p))
+            }
+        } catch (error: any) {
+            console.error("Comment Error:", error)
+            alert(`Comment Failed: ${error.message}`)
+        } finally {
+            setSubmittingComment(prev => {
+                const next = new Set(prev)
+                next.delete(postId)
+                return next
+            })
         }
     }
 
@@ -343,7 +356,7 @@ export default function FlexPage() {
                                                 onClick={() => handleUserClick(post.user_id)}
                                                 className="font-bold text-slate-200 hover:text-primary cursor-pointer transition-colors"
                                             >
-                                                {post.profiles?.username || "Unknown Agent"}
+                                                {post.profiles?.username || "Unknown Operative"}
                                             </div>
                                             <div className="text-[10px] text-slate-500 flex items-center gap-1">
                                                 <Clock className="h-3 w-3" />
@@ -392,7 +405,7 @@ export default function FlexPage() {
                                                 {commentsMap[post.id]?.map(comment => (
                                                     <div key={comment.id} className="text-sm">
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            <span className="font-bold text-slate-400 text-xs">{comment.profiles?.username}</span>
+                                                            <span className="font-bold text-slate-400 text-xs">{comment.profiles?.username || "Unknown Operative"}</span>
                                                             <span className="text-[10px] text-slate-600">{new Date(comment.created_at).toLocaleDateString()}</span>
                                                         </div>
                                                         <p className="text-slate-300 text-xs">{comment.content}</p>
@@ -411,13 +424,15 @@ export default function FlexPage() {
                                                     placeholder="Inject commentary..."
                                                     className="bg-slate-900 border-slate-800 text-xs h-8"
                                                     onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment(post.id)}
+                                                    disabled={submittingComment.has(post.id)}
                                                 />
                                                 <Button
                                                     size="sm"
                                                     onClick={() => handleSubmitComment(post.id)}
                                                     className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200"
+                                                    disabled={submittingComment.has(post.id)}
                                                 >
-                                                    <Send className="h-3 w-3" />
+                                                    {submittingComment.has(post.id) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
                                                 </Button>
                                             </div>
                                         </div>
@@ -430,7 +445,7 @@ export default function FlexPage() {
 
             </div>
 
-            {/* --- MODAL: PUBLIC PROFILE VIEWER --- */}
+            {/* --- MODAL: PROFILE VIEWER --- */}
             <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
                 <DialogContent className="bg-slate-950 border-slate-800 text-slate-100 max-w-md">
                     <DialogHeader>
