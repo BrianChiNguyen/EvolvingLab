@@ -135,7 +135,7 @@ export default function FlexPage() {
             <div className="mb-8 border-b border-white/10 pb-6">
                 <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white flex items-center gap-3">
                     <Trophy className="h-8 w-8 text-primary" />
-                    GLOBAL NEXUS
+                    FLEXING ROOM
                 </h1>
                 <p className="text-slate-500 text-xs mt-2 uppercase tracking-widest">
                     Live Feed • Operative Rankings

@@ -103,7 +103,7 @@ export default function ProfilePage() {
                 <div>
                     <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white flex items-center gap-3">
                         <User className="h-8 w-8 text-primary" />
-                        OPERATIVE PROFILE
+                        EVOLVING PROFILE
                     </h1>
                     <p className="text-slate-500 text-xs mt-2 uppercase tracking-widest">
                         Identity Verified • Level 1 Access
@@ -129,7 +129,7 @@ export default function ProfilePage() {
                     <Card className="bg-slate-950/40 border-slate-800">
                         <CardHeader>
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                                <Fingerprint className="h-4 w-4" /> Neural ID
+                                <Fingerprint className="h-4 w-4" /> EVOLVING ID
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
