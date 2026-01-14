@@ -1,6 +1,6 @@
 "use client"
 
-import { LayoutGrid, Monitor, Zap, LogOut, ShieldCheck, User, Trophy, BookOpen, Menu } from "lucide-react";
+import { LayoutGrid, Monitor, Zap, LogOut, ShieldCheck, User, Trophy, BookOpen } from "lucide-react";
 import Link from "next/link";
 import AuthGate from "@/components/AuthGate";
 import { FocusProvider, useFocus } from "@/context/FocusContext";
@@ -30,7 +30,7 @@ function MobileTimer() {
     const { isActive, timeLeft, formatTime } = useFocus()
     if (!isActive) return null
     return (
-        <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded px-2 py-1 animate-in fade-in zoom-in">
+        <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded px-2 py-1 animate-in fade-in zoom-in mr-2">
             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             <span className="text-xs font-mono font-bold text-white tracking-widest">{formatTime(timeLeft)}</span>
         </div>
@@ -101,18 +101,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950/80 backdrop-blur-xl border-b border-white/10 z-50 flex items-center justify-between px-4 shadow-lg">
                     <div className="flex flex-col">
                         <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Evolving Lab</span>
-                        <span className="text-sm font-bold text-white tracking-tighter">BRIAN'S SCHOOL</span>
+                        <span className="text-sm font-bold text-white tracking-tighter">NEURAL OS</span>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
                         <MobileTimer />
 
+                        {/* PROFILE MOVED HERE */}
+                        <Link href="/profile" className="p-2 text-slate-400 hover:text-primary transition-colors">
+                            <User className="h-5 w-5" />
+                        </Link>
+
                         {currentUserEmail === ADMIN_EMAIL && (
-                            <Link href="/settings" className="p-2 text-slate-400 hover:text-red-500">
+                            <Link href="/settings" className="p-2 text-slate-400 hover:text-red-500 transition-colors">
                                 <ShieldCheck className="h-5 w-5" />
                             </Link>
                         )}
-                        <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500">
+                        <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
                             <LogOut className="h-5 w-5" />
                         </button>
                     </div>
@@ -130,16 +135,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         <Zap className="h-6 w-6" />
                     </Link>
 
+                    {/* ADDED FLEX HERE */}
+                    <Link href="/flex" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/flex')}`}>
+                        <Trophy className="h-6 w-6" />
+                    </Link>
+
                     <Link href="/analytics" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/analytics')}`}>
                         <Monitor className="h-6 w-6" />
                     </Link>
 
                     <Link href="/stories" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/stories')}`}>
                         <BookOpen className="h-6 w-6" />
-                    </Link>
-
-                    <Link href="/profile" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/profile')}`}>
-                        <User className="h-6 w-6" />
                     </Link>
                 </nav>
 
