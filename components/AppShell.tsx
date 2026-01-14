@@ -101,7 +101,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950/80 backdrop-blur-xl border-b border-white/10 z-50 flex items-center justify-between px-4 shadow-lg">
                     <div className="flex flex-col">
                         <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Evolving Lab</span>
-                        <span className="text-sm font-bold text-white tracking-tighter">NEURAL OS</span>
+                        <span className="text-sm font-bold text-white tracking-tighter">BRIAN'S SCHOOL</span>
                     </div>
 
                     <div className="flex items-center gap-3">
