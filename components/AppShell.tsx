@@ -1,16 +1,17 @@
 "use client"
 
-import { LayoutGrid, Monitor, Zap, LogOut, ShieldCheck, User, Trophy, BookOpen } from "lucide-react";
+import { LayoutGrid, Monitor, Zap, LogOut, ShieldCheck, User, Trophy, BookOpen, Menu } from "lucide-react";
 import Link from "next/link";
 import AuthGate from "@/components/AuthGate";
-import { FocusProvider, useFocus } from "@/context/FocusContext"; 
+import { FocusProvider, useFocus } from "@/context/FocusContext";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { supabase } from "@/utils/supabase"; // <--- IMPORT SUPABASE
+import { supabase } from "@/utils/supabase";
 
-// --- CONFIG: YOUR NEW ADMIN EMAIL ---
-const ADMIN_EMAIL = "congtrangunsw@gmail.com"; 
+// --- CONFIG ---
+const ADMIN_EMAIL = "congtrangunsw@gmail.com";
 
+// --- COMPONENT: SIDEBAR TIMER (DESKTOP) ---
 function SidebarTimer() {
     const { isActive, timeLeft, formatTime } = useFocus()
     if (!isActive) return null
@@ -24,90 +25,136 @@ function SidebarTimer() {
     )
 }
 
+// --- COMPONENT: HEADER TIMER (MOBILE) ---
+function MobileTimer() {
+    const { isActive, timeLeft, formatTime } = useFocus()
+    if (!isActive) return null
+    return (
+        <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded px-2 py-1 animate-in fade-in zoom-in">
+            <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+            <span className="text-xs font-mono font-bold text-white tracking-widest">{formatTime(timeLeft)}</span>
+        </div>
+    )
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+    const pathname = usePathname();
+    const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Check Supabase User
-    const checkUser = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.email) setCurrentUserEmail(user.email);
+    useEffect(() => {
+        const checkUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email) setCurrentUserEmail(user.email);
+        }
+        checkUser();
+    }, [pathname]);
+
+    const handleLogout = async () => {
+        if (confirm("Terminate Session?")) {
+            await supabase.auth.signOut();
+            window.location.reload();
+        }
     }
-    checkUser();
-  }, [pathname]);
 
-  const handleLogout = async () => {
-    if(confirm("Terminate Session?")) {
-        await supabase.auth.signOut();
-        window.location.reload(); // Reload to trigger AuthGate
-    }
-  }
+    // Active Helper
+    const isActive = (path: string) => pathname === path ? "text-primary" : "text-slate-500";
+    const getLinkClass = (path: string) =>
+        `p-2 rounded-xl transition-all duration-300 flex justify-center items-center ${pathname === path ? "bg-primary/10 text-primary shadow-[0_0_15px_rgba(0,255,255,0.1)]" : "text-slate-400 hover:text-primary hover:bg-primary/5"}`;
 
-  const isActive = (path: string) => pathname === path ? "text-primary bg-primary/10 shadow-[0_0_15px_rgba(0,255,255,0.1)]" : "text-slate-400 hover:text-primary hover:bg-primary/5";
+    return (
+        <FocusProvider>
+            <AuthGate>
 
-  return (
-    <FocusProvider>
-        <AuthGate>
-            <aside className="w-24 border-r border-border flex flex-col items-center py-8 bg-black/40 backdrop-blur-xl z-50 fixed left-0 top-0 h-full">
-            
-            {/* NAVIGATION */}
-            <nav className="flex flex-col gap-6 w-full px-4">
-                <Link href="/" className="group relative flex justify-center w-full">
-                    {pathname === '/' && <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-10 bg-primary rounded-r-full group-hover:translate-x-0 transition-all duration-300 opacity-100" />}
-                    <div className={`p-3 rounded-xl transition-all duration-300 w-full flex justify-center ${isActive('/')}`}><LayoutGrid className="h-8 w-8" /></div>
-                </Link>
+                {/* =======================================
+                1. DESKTOP SIDEBAR (Hidden on Mobile)
+               ======================================= */}
+                <aside className="hidden md:flex w-24 border-r border-border flex-col items-center py-8 bg-black/40 backdrop-blur-xl z-50 fixed left-0 top-0 h-full">
+                    <nav className="flex flex-col gap-6 w-full px-4">
+                        <Link href="/" className={getLinkClass('/')}><LayoutGrid className="h-8 w-8" /></Link>
+                        <Link href="/analytics" className={getLinkClass('/analytics')}><Monitor className="h-8 w-8" /></Link>
+                        <Link href="/focus" className={getLinkClass('/focus')}><Zap className="h-8 w-8" /></Link>
+                        <Link href="/flex" className={getLinkClass('/flex')}><Trophy className="h-8 w-8" /></Link>
+                        <Link href="/stories" className={getLinkClass('/stories')}><BookOpen className="h-8 w-8" /></Link>
+                    </nav>
 
-                <Link href="/analytics" className="group relative flex justify-center w-full">
-                    {pathname === '/analytics' && <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-10 bg-primary rounded-r-full group-hover:translate-x-0 transition-all duration-300 opacity-100" />}
-                    <div className={`p-3 rounded-xl transition-all duration-300 w-full flex justify-center ${isActive('/analytics')}`}><Monitor className="h-8 w-8" /></div>
-                </Link>
+                    <div className="flex-1" />
+                    <SidebarTimer />
 
-                <Link href="/focus" className="group relative flex justify-center w-full">
-                    {pathname === '/focus' && <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-10 bg-primary rounded-r-full group-hover:translate-x-0 transition-all duration-300 opacity-100" />}
-                    <div className={`p-3 rounded-xl transition-all duration-300 w-full flex justify-center ${isActive('/focus')}`}><Zap className="h-8 w-8" /></div>
-                </Link>
+                    <div className="flex flex-col gap-4 w-full px-4">
+                        <Link href="/profile" className={getLinkClass('/profile')}><User className="h-8 w-8" /></Link>
 
-                <Link href="/flex" className="group relative flex justify-center w-full">
-                    {pathname === '/flex' && <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-10 bg-primary rounded-r-full group-hover:translate-x-0 transition-all duration-300 opacity-100" />}
-                    <div className={`p-3 rounded-xl transition-all duration-300 w-full flex justify-center ${isActive('/flex')}`}><Trophy className="h-8 w-8" /></div>
-                </Link>
-                
-                <Link href="/stories" className="group relative flex justify-center w-full">
-                    {pathname === '/stories' && <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-10 bg-primary rounded-r-full group-hover:translate-x-0 transition-all duration-300 opacity-100" />}
-                    <div className={`p-3 rounded-xl transition-all duration-300 w-full flex justify-center ${isActive('/stories')}`}><BookOpen className="h-8 w-8" /></div>
-                </Link>
-            </nav>
+                        {currentUserEmail === ADMIN_EMAIL && (
+                            <Link href="/settings" className={`p-3 rounded-xl flex justify-center ${pathname === '/settings' ? "text-red-500 bg-red-500/10 border border-red-500/20" : "text-slate-400 hover:text-red-500 hover:bg-red-500/10"}`}>
+                                <ShieldCheck className="h-8 w-8" />
+                            </Link>
+                        )}
 
-            <div className="flex-1" />
-            <SidebarTimer />
+                        <button onClick={handleLogout} className="p-3 rounded-xl text-slate-500 hover:text-red-500 hover:bg-red-500/10 flex justify-center">
+                            <LogOut className="h-8 w-8" />
+                        </button>
+                    </div>
+                </aside>
 
-            {/* USER ACTIONS */}
-            <div className="flex flex-col gap-4 w-full px-4">
-                <Link href="/profile" className="group relative flex justify-center w-full">
-                    {pathname === '/profile' && <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-10 bg-primary rounded-r-full group-hover:translate-x-0 transition-all duration-300 opacity-100" />}
-                    <div className={`p-3 rounded-xl transition-all duration-300 w-full flex justify-center ${isActive('/profile')}`}><User className="h-8 w-8" /></div>
-                </Link>
+                {/* =======================================
+                2. MOBILE HEADER (Top Bar)
+               ======================================= */}
+                <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950/80 backdrop-blur-xl border-b border-white/10 z-50 flex items-center justify-between px-4 shadow-lg">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Evolving Lab</span>
+                        <span className="text-sm font-bold text-white tracking-tighter">NEURAL OS</span>
+                    </div>
 
-                {/* --- ADMIN CHECK --- */}
-                {currentUserEmail === ADMIN_EMAIL && (
-                    <Link href="/settings" className="group relative flex justify-center w-full">
-                        {pathname === '/settings' && <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full w-1 h-10 bg-red-500 rounded-r-full group-hover:translate-x-0 transition-all duration-300 opacity-100" />}
-                        <div className={`p-3 rounded-xl transition-all duration-300 w-full flex justify-center ${pathname === '/settings' ? "text-red-500 bg-red-500/10 border border-red-500/20" : "text-slate-400 hover:text-red-500 hover:bg-red-500/10"}`}>
-                            <ShieldCheck className="h-8 w-8" />
-                        </div>
+                    <div className="flex items-center gap-3">
+                        <MobileTimer />
+
+                        {currentUserEmail === ADMIN_EMAIL && (
+                            <Link href="/settings" className="p-2 text-slate-400 hover:text-red-500">
+                                <ShieldCheck className="h-5 w-5" />
+                            </Link>
+                        )}
+                        <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500">
+                            <LogOut className="h-5 w-5" />
+                        </button>
+                    </div>
+                </header>
+
+                {/* =======================================
+                3. MOBILE NAVIGATION (Bottom Bar)
+               ======================================= */}
+                <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-slate-950/90 backdrop-blur-xl border-t border-white/10 z-50 flex justify-around items-center px-2 pb-4 pt-2">
+                    <Link href="/" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/')}`}>
+                        <LayoutGrid className="h-6 w-6" />
                     </Link>
-                )}
 
-                <button onClick={handleLogout} className="p-3 rounded-xl text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer w-full flex justify-center">
-                    <LogOut className="h-8 w-8" />
-                </button>
-            </div>
-            </aside>
-            <main className="flex-1 overflow-y-auto bg-[url('/grid-pattern.svg')] ml-24 h-full">
-                {children}
-            </main>
-        </AuthGate>
-    </FocusProvider>
-  );
+                    <Link href="/focus" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/focus')}`}>
+                        <Zap className="h-6 w-6" />
+                    </Link>
+
+                    <Link href="/analytics" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/analytics')}`}>
+                        <Monitor className="h-6 w-6" />
+                    </Link>
+
+                    <Link href="/stories" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/stories')}`}>
+                        <BookOpen className="h-6 w-6" />
+                    </Link>
+
+                    <Link href="/profile" className={`flex flex-col items-center gap-1 p-2 rounded-lg ${isActive('/profile')}`}>
+                        <User className="h-6 w-6" />
+                    </Link>
+                </nav>
+
+                {/* =======================================
+                4. MAIN CONTENT AREA
+               ======================================= */}
+                <main className="flex-1 h-full overflow-y-auto bg-[url('/grid-pattern.svg')] 
+                md:ml-24           /* Desktop: Push content right to clear sidebar */
+                pt-20 pb-24        /* Mobile: Push content down (header) and up (nav) */
+                md:pt-0 md:pb-0    /* Desktop: Remove mobile padding */
+            ">
+                    {children}
+                </main>
+
+            </AuthGate>
+        </FocusProvider>
+    );
 }
