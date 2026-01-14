@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Trophy, Medal, Crown, Send, User, Clock, GraduationCap, Briefcase, Heart, MessageSquare, Loader2, Trash2 } from "lucide-react"
+import { Trophy, Medal, Crown, Send, User, Clock, GraduationCap, Briefcase, Heart, MessageSquare, Loader2 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/utils/supabase"
 
@@ -55,7 +55,7 @@ export default function FlexPage() {
     const [selectedUser, setSelectedUser] = useState<any>(null)
     const [isProfileOpen, setIsProfileOpen] = useState(false)
 
-    // Comment State: Map post_id to array of comments
+    // Comment State
     const [commentsMap, setCommentsMap] = useState<Record<string, Comment[]>>({})
     const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set())
     const [newCommentText, setNewCommentText] = useState<Record<string, string>>({})
@@ -70,7 +70,6 @@ export default function FlexPage() {
         if (!user) return
 
         // B. Fetch Posts + Counts + My Like Status
-        // Note: This query gets posts, joins profiles, counts kudos/comments, and checks if *I* liked it
         const { data: postData, error } = await supabase
             .from('posts')
             .select(`
@@ -82,16 +81,15 @@ export default function FlexPage() {
             .order('created_at', { ascending: false })
 
         if (postData) {
-            // Process the raw data to match our clean Post interface
             const formattedPosts: Post[] = postData.map((p: any) => ({
                 id: p.id,
                 content: p.content,
                 created_at: p.created_at,
                 user_id: p.user_id,
                 profiles: p.profiles,
-                kudos_count: p.post_kudos.length, // Total likes
-                comments_count: p.post_comments[0].count, // Total comments
-                user_has_liked: p.post_kudos.some((k: any) => k.user_id === user.id) // Did I like it?
+                kudos_count: p.post_kudos ? p.post_kudos.length : 0,
+                comments_count: p.post_comments && p.post_comments[0] ? p.post_comments[0].count : 0,
+                user_has_liked: p.post_kudos ? p.post_kudos.some((k: any) => k.user_id === user.id) : false
             }))
             setPosts(formattedPosts)
         }
@@ -125,21 +123,36 @@ export default function FlexPage() {
     // --- 2. INTERACTION HANDLERS ---
 
     const handlePost = async () => {
-        if (!newPost.trim() || !currentUser) return
+        if (!newPost.trim()) return
+        if (!currentUser) return alert("Secure Uplink Lost. Please log in again.")
+
         setSubmitting(true)
-        const { error } = await supabase.from('posts').insert({
-            content: newPost,
-            user_id: currentUser.id
-        })
-        if (!error) {
+
+        try {
+            // 1. Insert the post
+            const { error: insertError } = await supabase.from('posts').insert({
+                content: newPost,
+                user_id: currentUser.id
+            })
+
+            if (insertError) throw insertError
+
+            // 2. Success
             setNewPost("")
-            loadData()
+            await loadData()
+
+        } catch (error: any) {
+            console.error("Transmission Failed:", error)
+            alert(`Transmission Failed: ${error.message}`)
+        } finally {
+            setSubmitting(false)
         }
-        setSubmitting(false)
     }
 
     const handleKudo = async (post: Post) => {
-        // 1. Optimistic UI Update (Immediate feedback)
+        if (!currentUser) return
+
+        // Optimistic Update
         const isLiking = !post.user_has_liked
         const updatedPosts = posts.map(p =>
             p.id === post.id
@@ -148,7 +161,7 @@ export default function FlexPage() {
         )
         setPosts(updatedPosts)
 
-        // 2. DB Update
+        // DB Update
         if (isLiking) {
             await supabase.from('post_kudos').insert({ post_id: post.id, user_id: currentUser.id })
         } else {
@@ -160,10 +173,9 @@ export default function FlexPage() {
         const newSet = new Set(expandedPosts)
 
         if (newSet.has(postId)) {
-            newSet.delete(postId) // Collapse
+            newSet.delete(postId)
         } else {
-            newSet.add(postId) // Expand
-            // If we haven't loaded comments for this post yet, fetch them
+            newSet.add(postId)
             if (!commentsMap[postId]) {
                 setLoadingComments(prev => new Set(prev).add(postId))
                 const { data } = await supabase
@@ -187,9 +199,8 @@ export default function FlexPage() {
 
     const handleSubmitComment = async (postId: string) => {
         const text = newCommentText[postId]
-        if (!text?.trim()) return
+        if (!text?.trim() || !currentUser) return
 
-        // Insert to DB
         const { data, error } = await supabase
             .from('post_comments')
             .insert({ post_id: postId, user_id: currentUser.id, content: text })
@@ -197,14 +208,11 @@ export default function FlexPage() {
             .single()
 
         if (data) {
-            // Update UI
             setCommentsMap(prev => ({
                 ...prev,
                 [postId]: [...(prev[postId] || []), data as any]
             }))
             setNewCommentText(prev => ({ ...prev, [postId]: "" }))
-
-            // Increment comment count in post list
             setPosts(posts.map(p => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p))
         }
     }
@@ -351,7 +359,6 @@ export default function FlexPage() {
 
                                     {/* ACTION BAR */}
                                     <div className="flex items-center gap-4 border-t border-white/5 pt-2">
-                                        {/* KUDOS BUTTON */}
                                         <button
                                             onClick={() => handleKudo(post)}
                                             className={`flex items-center gap-2 text-xs font-bold transition-colors ${post.user_has_liked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
@@ -360,7 +367,6 @@ export default function FlexPage() {
                                             {post.kudos_count} KUDOS
                                         </button>
 
-                                        {/* COMMENTS TOGGLE */}
                                         <button
                                             onClick={() => toggleComments(post.id)}
                                             className={`flex items-center gap-2 text-xs font-bold transition-colors ${expandedPosts.has(post.id) ? 'text-primary' : 'text-slate-500 hover:text-primary'}`}
@@ -374,7 +380,7 @@ export default function FlexPage() {
                                     {expandedPosts.has(post.id) && (
                                         <div className="mt-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-2">
 
-                                            {/* LOADING STATE */}
+                                            {/* LOADING */}
                                             {loadingComments.has(post.id) && (
                                                 <div className="text-center py-4 text-xs text-slate-500 flex justify-center gap-2">
                                                     <Loader2 className="h-3 w-3 animate-spin" /> LOADING DATA...
@@ -397,7 +403,7 @@ export default function FlexPage() {
                                                 )}
                                             </div>
 
-                                            {/* ADD COMMENT INPUT */}
+                                            {/* ADD COMMENT */}
                                             <div className="flex gap-2">
                                                 <Input
                                                     value={newCommentText[post.id] || ""}
@@ -435,7 +441,6 @@ export default function FlexPage() {
 
                     {selectedUser && (
                         <div className="space-y-6 py-4">
-                            {/* AVATAR & NAME */}
                             <div className="flex flex-col items-center text-center">
                                 <div className="h-24 w-24 rounded-full bg-slate-900 border-2 border-primary/20 overflow-hidden mb-4 shadow-[0_0_20px_rgba(0,255,255,0.1)]">
                                     {selectedUser.avatar_url ? (
@@ -448,7 +453,6 @@ export default function FlexPage() {
                                 <span className="text-xs text-slate-500 font-mono uppercase tracking-widest">Verified Identity</span>
                             </div>
 
-                            {/* STATS */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="bg-slate-900/50 p-3 rounded border border-slate-800">
                                     <div className="flex items-center gap-2 text-xs text-slate-500 uppercase mb-1">
