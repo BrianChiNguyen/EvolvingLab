@@ -2,15 +2,15 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Trophy, Medal, Crown, Send, User, MessageSquare, Clock, GraduationCap, Briefcase } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Trophy, Medal, Crown, Send, User, Clock, GraduationCap, Briefcase, Heart, MessageSquare, Loader2, Trash2 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { supabase } from "@/utils/supabase"
 
 // --- TYPES ---
-interface Post {
+interface Comment {
     id: string
     content: string
     created_at: string
@@ -21,11 +21,26 @@ interface Post {
     }
 }
 
+interface Post {
+    id: string
+    content: string
+    created_at: string
+    user_id: string
+    profiles: {
+        username: string
+        avatar_url: string
+    }
+    // New fields for interactions
+    kudos_count: number
+    comments_count: number
+    user_has_liked: boolean
+}
+
 interface RankedUser {
     id: string
     username: string
     avatar_url: string
-    score: number // Completed Tasks
+    score: number
 }
 
 export default function FlexPage() {
@@ -40,45 +55,63 @@ export default function FlexPage() {
     const [selectedUser, setSelectedUser] = useState<any>(null)
     const [isProfileOpen, setIsProfileOpen] = useState(false)
 
+    // Comment State: Map post_id to array of comments
+    const [commentsMap, setCommentsMap] = useState<Record<string, Comment[]>>({})
+    const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set())
+    const [newCommentText, setNewCommentText] = useState<Record<string, string>>({})
+    const [loadingComments, setLoadingComments] = useState<Set<string>>(new Set())
+
     // --- 1. LOAD DATA ---
     const loadData = async () => {
         // A. Get Current User
         const { data: { user } } = await supabase.auth.getUser()
         setCurrentUser(user)
 
-        // B. Fetch Posts (Newest First)
-        const { data: postData } = await supabase
+        if (!user) return
+
+        // B. Fetch Posts + Counts + My Like Status
+        // Note: This query gets posts, joins profiles, counts kudos/comments, and checks if *I* liked it
+        const { data: postData, error } = await supabase
             .from('posts')
             .select(`
-            id, content, created_at, user_id,
-            profiles (username, avatar_url)
-        `)
+                *,
+                profiles (username, avatar_url),
+                post_kudos (user_id),
+                post_comments (count)
+            `)
             .order('created_at', { ascending: false })
 
-        if (postData) setPosts(postData as any)
+        if (postData) {
+            // Process the raw data to match our clean Post interface
+            const formattedPosts: Post[] = postData.map((p: any) => ({
+                id: p.id,
+                content: p.content,
+                created_at: p.created_at,
+                user_id: p.user_id,
+                profiles: p.profiles,
+                kudos_count: p.post_kudos.length, // Total likes
+                comments_count: p.post_comments[0].count, // Total comments
+                user_has_liked: p.post_kudos.some((k: any) => k.user_id === user.id) // Did I like it?
+            }))
+            setPosts(formattedPosts)
+        }
 
-        // C. Calculate Leaderboard (Heavy Logic)
-        // We fetch all profiles, then count their completed tasks
+        // C. Calculate Leaderboard
         const { data: profiles } = await supabase.from('profiles').select('id, username, avatar_url')
         const { data: tasks } = await supabase.from('tasks').select('user_id, status')
 
         if (profiles && tasks) {
             const scores: Record<string, number> = {}
-
-            // Count completed tasks per user
             tasks.forEach((t: any) => {
-                if (t.status === 'complete') {
-                    scores[t.user_id] = (scores[t.user_id] || 0) + 1
-                }
+                if (t.status === 'complete') scores[t.user_id] = (scores[t.user_id] || 0) + 1
             })
 
-            // Map to RankedUser array
             const leaderboard = profiles.map((p: any) => ({
                 id: p.id,
                 username: p.username || "Unknown Operative",
                 avatar_url: p.avatar_url,
                 score: scores[p.id] || 0
-            })).sort((a, b) => b.score - a.score) // Sort High to Low
+            })).sort((a, b) => b.score - a.score)
 
             setRanking(leaderboard)
         }
@@ -89,31 +122,95 @@ export default function FlexPage() {
         loadData()
     }, [])
 
-    // --- 2. ACTIONS ---
+    // --- 2. INTERACTION HANDLERS ---
+
     const handlePost = async () => {
         if (!newPost.trim() || !currentUser) return
         setSubmitting(true)
-
         const { error } = await supabase.from('posts').insert({
             content: newPost,
             user_id: currentUser.id
         })
-
         if (!error) {
             setNewPost("")
-            loadData() // Refresh feed
+            loadData()
         }
         setSubmitting(false)
     }
 
-    const handleUserClick = async (userId: string) => {
-        // Fetch full profile details for the clicked user
-        const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
+    const handleKudo = async (post: Post) => {
+        // 1. Optimistic UI Update (Immediate feedback)
+        const isLiking = !post.user_has_liked
+        const updatedPosts = posts.map(p =>
+            p.id === post.id
+                ? { ...p, user_has_liked: isLiking, kudos_count: isLiking ? p.kudos_count + 1 : p.kudos_count - 1 }
+                : p
+        )
+        setPosts(updatedPosts)
+
+        // 2. DB Update
+        if (isLiking) {
+            await supabase.from('post_kudos').insert({ post_id: post.id, user_id: currentUser.id })
+        } else {
+            await supabase.from('post_kudos').delete().match({ post_id: post.id, user_id: currentUser.id })
+        }
+    }
+
+    const toggleComments = async (postId: string) => {
+        const newSet = new Set(expandedPosts)
+
+        if (newSet.has(postId)) {
+            newSet.delete(postId) // Collapse
+        } else {
+            newSet.add(postId) // Expand
+            // If we haven't loaded comments for this post yet, fetch them
+            if (!commentsMap[postId]) {
+                setLoadingComments(prev => new Set(prev).add(postId))
+                const { data } = await supabase
+                    .from('post_comments')
+                    .select(`*, profiles(username, avatar_url)`)
+                    .eq('post_id', postId)
+                    .order('created_at', { ascending: true })
+
+                if (data) {
+                    setCommentsMap(prev => ({ ...prev, [postId]: data as any }))
+                }
+                setLoadingComments(prev => {
+                    const next = new Set(prev)
+                    next.delete(postId)
+                    return next
+                })
+            }
+        }
+        setExpandedPosts(newSet)
+    }
+
+    const handleSubmitComment = async (postId: string) => {
+        const text = newCommentText[postId]
+        if (!text?.trim()) return
+
+        // Insert to DB
+        const { data, error } = await supabase
+            .from('post_comments')
+            .insert({ post_id: postId, user_id: currentUser.id, content: text })
+            .select(`*, profiles(username, avatar_url)`)
             .single()
 
+        if (data) {
+            // Update UI
+            setCommentsMap(prev => ({
+                ...prev,
+                [postId]: [...(prev[postId] || []), data as any]
+            }))
+            setNewCommentText(prev => ({ ...prev, [postId]: "" }))
+
+            // Increment comment count in post list
+            setPosts(posts.map(p => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p))
+        }
+    }
+
+    const handleUserClick = async (userId: string) => {
+        const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
         if (data) {
             setSelectedUser(data)
             setIsProfileOpen(true)
@@ -164,11 +261,9 @@ export default function FlexPage() {
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 flex justify-center">{getRankIcon(index)}</div>
-
                                             <div className="h-8 w-8 rounded-full bg-slate-800 overflow-hidden border border-slate-700">
                                                 {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <User className="p-1.5 text-slate-500" />}
                                             </div>
-
                                             <span className={`text-sm font-bold ${index === 0 ? 'text-yellow-500' : 'text-slate-200'} group-hover:text-primary transition-colors`}>
                                                 {user.username}
                                             </span>
@@ -220,11 +315,11 @@ export default function FlexPage() {
                     <div className="space-y-4">
                         {posts.map(post => (
                             <Card key={post.id} className="bg-slate-950/40 border-slate-800 backdrop-blur-sm">
-                                <CardContent className="pt-6">
+                                <CardContent className="pt-6 pb-2">
                                     <div className="flex gap-3 mb-3">
-                                        {/* AVATAR (Clickable) */}
+                                        {/* AVATAR */}
                                         <div
-                                            onClick={() => handlePostUserClick(post)}
+                                            onClick={() => handleUserClick(post.user_id)}
                                             className="h-10 w-10 rounded-full bg-slate-800 border border-slate-700 overflow-hidden cursor-pointer hover:border-primary transition-colors"
                                         >
                                             {post.profiles?.avatar_url ? (
@@ -234,25 +329,93 @@ export default function FlexPage() {
                                             )}
                                         </div>
 
-                                        {/* META */}
+                                        {/* HEADER */}
                                         <div>
                                             <div
-                                                onClick={() => handlePostUserClick(post)}
+                                                onClick={() => handleUserClick(post.user_id)}
                                                 className="font-bold text-slate-200 hover:text-primary cursor-pointer transition-colors"
                                             >
                                                 {post.profiles?.username || "Unknown Agent"}
                                             </div>
                                             <div className="text-[10px] text-slate-500 flex items-center gap-1">
                                                 <Clock className="h-3 w-3" />
-                                                {new Date(post.created_at).toLocaleDateString()} at {new Date(post.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                {new Date(post.created_at).toLocaleDateString()}
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* CONTENT */}
-                                    <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                    <p className="text-slate-300 leading-relaxed whitespace-pre-wrap mb-4">
                                         {post.content}
                                     </p>
+
+                                    {/* ACTION BAR */}
+                                    <div className="flex items-center gap-4 border-t border-white/5 pt-2">
+                                        {/* KUDOS BUTTON */}
+                                        <button
+                                            onClick={() => handleKudo(post)}
+                                            className={`flex items-center gap-2 text-xs font-bold transition-colors ${post.user_has_liked ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
+                                        >
+                                            <Heart className={`h-4 w-4 ${post.user_has_liked ? 'fill-current' : ''}`} />
+                                            {post.kudos_count} KUDOS
+                                        </button>
+
+                                        {/* COMMENTS TOGGLE */}
+                                        <button
+                                            onClick={() => toggleComments(post.id)}
+                                            className={`flex items-center gap-2 text-xs font-bold transition-colors ${expandedPosts.has(post.id) ? 'text-primary' : 'text-slate-500 hover:text-primary'}`}
+                                        >
+                                            <MessageSquare className="h-4 w-4" />
+                                            {post.comments_count} COMMENTS
+                                        </button>
+                                    </div>
+
+                                    {/* COMMENTS SECTION */}
+                                    {expandedPosts.has(post.id) && (
+                                        <div className="mt-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-2">
+
+                                            {/* LOADING STATE */}
+                                            {loadingComments.has(post.id) && (
+                                                <div className="text-center py-4 text-xs text-slate-500 flex justify-center gap-2">
+                                                    <Loader2 className="h-3 w-3 animate-spin" /> LOADING DATA...
+                                                </div>
+                                            )}
+
+                                            {/* COMMENT LIST */}
+                                            <div className="space-y-4 mb-4 pl-4 border-l border-white/10">
+                                                {commentsMap[post.id]?.map(comment => (
+                                                    <div key={comment.id} className="text-sm">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="font-bold text-slate-400 text-xs">{comment.profiles?.username}</span>
+                                                            <span className="text-[10px] text-slate-600">{new Date(comment.created_at).toLocaleDateString()}</span>
+                                                        </div>
+                                                        <p className="text-slate-300 text-xs">{comment.content}</p>
+                                                    </div>
+                                                ))}
+                                                {commentsMap[post.id]?.length === 0 && !loadingComments.has(post.id) && (
+                                                    <div className="text-[10px] text-slate-600 italic">No comments intercepted yet.</div>
+                                                )}
+                                            </div>
+
+                                            {/* ADD COMMENT INPUT */}
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    value={newCommentText[post.id] || ""}
+                                                    onChange={(e) => setNewCommentText(prev => ({ ...prev, [post.id]: e.target.value }))}
+                                                    placeholder="Inject commentary..."
+                                                    className="bg-slate-900 border-slate-800 text-xs h-8"
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleSubmitComment(post.id)}
+                                                />
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => handleSubmitComment(post.id)}
+                                                    className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200"
+                                                >
+                                                    <Send className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
                         ))}
@@ -311,9 +474,4 @@ export default function FlexPage() {
 
         </div>
     )
-
-    // Helper to handle clicking a user in the feed (deals with potential nulls)
-    function handlePostUserClick(post: Post) {
-        if (post.user_id) handleUserClick(post.user_id)
-    }
 }
